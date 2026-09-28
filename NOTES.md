@@ -23,6 +23,20 @@ not part of the chain: never touch it.
   flipped signature byte and flipped message byte both fail, sha256 vectors,
   JSON shapes).
 
+### crates/core `tx.rs` (`botchain-core`) — milestone 2, done
+- `Transfer { from, to, amount, nonce, signature }`, serde gives exactly the
+  interface JSON (`amount` decimal string, `nonce` integer, rest base58).
+- `transfer_message(chain_id, from, to, amount, nonce)` builds the signed
+  text `botchain:transfer:<chain_id>:<from>:<to>:<amount>:<nonce>`;
+  `Transfer::signing_message`, `Transfer::sign(chain_id, keypair, ...)`,
+  `Transfer::id()` = base58 signature string.
+- `Transfer::verify(chain_id)` -> `TxError::{ZeroAmount, BadSender,
+  BadSignature}`: positive amount, sender is a real curve point, signature
+  over the canonical message. Balance and nonce are state checks, later.
+- 9 tests: signed transfer verifies, tampered amount/nonce/to/from and a
+  wrong chain_id all fail, zero amount rejected, JSON shape pinned, and a
+  hardcoded transfer JSON (signature produced once by our signer) verifies.
+
 ## Decisions
 - Verification uses `verify_strict` (rejects small order / malleable keys).
 - `Address::from_bytes` does not check the curve point; the check happens in
@@ -30,9 +44,13 @@ not part of the chain: never touch it.
 - Base58 length is validated after decoding, so any 32/64 byte payload works
   regardless of leading-zero characters.
 - Amounts accept leading zeros (`"007"` = 7) but nothing else non-digit.
+- Transfer JSON is lenient about unknown fields (no `deny_unknown_fields`) so
+  clients can add metadata; only the five fields are signed.
+- `to` is not required to be a curve point (Solana allows off-curve PDAs);
+  `from` must be, or nothing could verify.
+- Self transfers are not rejected here; they are a no-op for state.
 
-## Next (milestone 2)
-Transactions, accounts and state: the transfer type with the exact signed
-message `botchain:transfer:<chain_id>:<from>:<to>:<amount>:<nonce>`, account
-state with nonces, and apply/validate rules. Then blocks, storage, the node
-binary with the JSON-RPC surface from the spec.
+## Next (milestone 3)
+Accounts and state: balances plus nonces, apply/validate rules on top of
+`Transfer::verify` (sufficient balance, nonce == account nonce), a state root.
+Then blocks, storage, the node binary with the JSON-RPC surface from the spec.
