@@ -158,7 +158,7 @@ impl<'de> Deserialize<'de> for Address {
 }
 
 /// A 64 byte ed25519 signature, base58 encoded in JSON.
-#[derive(Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Signature([u8; SIGNATURE_LEN]);
 
 impl Signature {
