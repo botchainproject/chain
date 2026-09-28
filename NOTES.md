@@ -59,6 +59,31 @@ not part of the chain: never touch it.
   root.
 - 59 core tests green, including every rejection path and root determinism.
 
+### crates/core milestone 4, done — blocks, chain, sequencer
+- `block.rs`: `Block { height, hash, parent_hash, state_root, timestamp_ms,
+  tx_count, transactions: Vec<Signature> }` (exactly the RPC JSON, in that
+  field order). `Block::new` fills `tx_count` and the hash;
+  `Block::genesis(&Genesis, state_root)` is height 0 with parent 64 zeros.
+  `block_hash` = `sha256("botchain:block:v1" || height_be || parent_hash ||
+  state_root || timestamp_be || tx_count_be || each 64 byte signature)`.
+  Helpers `compute_hash`, `is_consistent`, `follows(parent)`, `is_genesis`.
+  `Checkpoint { height, hash, state_root }` = the `getCheckpoint` JSON.
+- `chain.rs`: `Chain` = chain_id + `State` + `Vec<Block>` + signature ->
+  `ConfirmedTransfer { transfer, block_height }` index. `Chain::new(genesis)`,
+  `height`, `head`, `block(h)`, `block_by_hash`, `latest_blocks(limit)`
+  (newest first), `transaction(sig)`, `checkpoint()`, and `seal(timestamp_ms,
+  transfers) -> SealedBlock { block, included, rejected }`. Seal applies in
+  order, drops invalid ones with a `RejectReason` (`AlreadyConfirmed`,
+  `DuplicateInBlock`, `State(..)`) and always produces a block.
+- `sequencer.rs`: `Sequencer` = `Chain` + FIFO pending queue (`VecDeque` +
+  `BTreeSet` of ids). `submit(tx)` does the order free checks
+  (`SubmitError::{Tx, AlreadyPending, AlreadyConfirmed, StaleNonce,
+  MempoolFull}`), `tick(timestamp_ms)` drains up to the block limit and seals
+  (empty block when nothing is pending). Limits: 10_000 mempool, 1_000 per
+  block, overridable with `with_limits`.
+- 81 core tests green, including "the chain links by parent hash" and
+  "replaying the same transfers from genesis gives the same hashes and roots".
+
 ## Decisions
 - Verification uses `verify_strict` (rejects small order / malleable keys).
 - `Address::from_bytes` does not check the curve point; the check happens in
@@ -80,9 +105,19 @@ not part of the chain: never touch it.
   uses `apply_transfer`.
 - State root is a tagged sorted hash, not a merkle tree: no proofs needed
   yet. If proofs are ever needed, swap the root function and bump the tag.
+- A block commits to the state root *after* its transfers, so the genesis
+  block commits to the allocations.
+- Sealing clamps the timestamp to the parent's, so time never runs backwards
+  even if the clock does; blocks may share a timestamp.
+- Transfers dropped at seal time are not requeued: in this order they can
+  never apply, and the client can resend. Kept simple on purpose.
+- `submit` only rejects a nonce *below* the account nonce; a future nonce may
+  become valid once earlier transfers land.
+- `Signature` now derives `Ord` so it can key the confirmed tx index.
 
-## Next (milestone 4)
-Blocks: block header/body types, hashing (`hash` over height, parent_hash,
-state_root, timestamp_ms, tx ids), the genesis block from `Genesis`, and a
-chain that applies a block's transfers to `State`. Then storage (redb), the
-node binary and the JSON-RPC surface from the spec.
+## Next (milestone 5)
+The node: a `crates/node` binary `botchain-node` with the CLI flags
+(`--rpc-port`, `--data-dir`, `--genesis`, `--block-ms`), a tokio tick that
+calls `Sequencer::tick`, one log line per event, and the JSON-RPC surface
+over axum. Persistence with redb after (or with) that; `Chain` is in memory
+today and rebuilt from genesis + blocks.
