@@ -23,4 +23,4 @@ pub use genesis::{Allocation, Genesis, GenesisError};
 pub use hash::{sha256, sha256_parts, Hash, HashError};
 pub use sequencer::{Sequencer, SubmitError};
 pub use state::{State, StateError};
-pub use tx::{transfer_message, Transfer, TxError};
+pub use tx::{transfer_message, Transfer, TxError, TxStatus, TxView};

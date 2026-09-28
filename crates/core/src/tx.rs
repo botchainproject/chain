@@ -133,6 +133,64 @@ impl Transfer {
     }
 }
 
+/// Where a transfer stands: still waiting, or in a block.
+#[derive(Clone, Copy, PartialEq, Eq, Debug, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum TxStatus {
+    /// In the mempool, not in a block yet.
+    Pending,
+    /// Included in the block at `block_height`.
+    Confirmed,
+}
+
+/// A transfer as the `getTransaction` RPC returns it.
+///
+/// ```json
+/// {"signature":"<base58>","from":"<base58>","to":"<base58>",
+///  "amount":"<decimal>","nonce":0,"block_height":null,"status":"pending"}
+/// ```
+#[derive(Clone, Copy, PartialEq, Eq, Debug, Serialize, Deserialize)]
+pub struct TxView {
+    /// The transaction id.
+    pub signature: Signature,
+    /// The sender.
+    pub from: Address,
+    /// The receiver.
+    pub to: Address,
+    /// How much moves, in base units.
+    pub amount: Amount,
+    /// The sender's nonce this transfer used.
+    pub nonce: u64,
+    /// The block that confirmed it, or `null` while it is pending.
+    pub block_height: Option<u64>,
+    /// `pending` or `confirmed`.
+    pub status: TxStatus,
+}
+
+impl TxView {
+    /// The view of a transfer that is still in the mempool.
+    pub fn pending(transfer: &Transfer) -> TxView {
+        TxView {
+            signature: transfer.signature,
+            from: transfer.from,
+            to: transfer.to,
+            amount: transfer.amount,
+            nonce: transfer.nonce,
+            block_height: None,
+            status: TxStatus::Pending,
+        }
+    }
+
+    /// The view of a transfer that landed in a block.
+    pub fn confirmed(transfer: &Transfer, block_height: u64) -> TxView {
+        TxView {
+            block_height: Some(block_height),
+            status: TxStatus::Confirmed,
+            ..TxView::pending(transfer)
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -260,6 +318,29 @@ mod tests {
         let back: Transfer = serde_json::from_str(&json).expect("deserialize");
         assert_eq!(back, tx);
         assert_eq!(back.verify(CHAIN), Ok(()));
+    }
+
+    #[test]
+    fn tx_view_json_shape_is_the_public_interface() {
+        let tx = Transfer::sign(
+            CHAIN,
+            &sender(),
+            receiver().address(),
+            Amount::from_u64(5),
+            2,
+        );
+        let pending = serde_json::to_string(&TxView::pending(&tx)).expect("serialize");
+        assert_eq!(
+            pending,
+            format!(
+                r#"{{"signature":"{}","from":"{}","to":"{}","amount":"5","nonce":2,"block_height":null,"status":"pending"}}"#,
+                tx.signature.to_base58(),
+                tx.from.to_base58(),
+                tx.to.to_base58()
+            )
+        );
+        let confirmed = serde_json::to_string(&TxView::confirmed(&tx, 9)).expect("serialize");
+        assert!(confirmed.contains(r#""block_height":9,"status":"confirmed""#));
     }
 
     #[test]

@@ -84,6 +84,33 @@ not part of the chain: never touch it.
 - 81 core tests green, including "the chain links by parent hash" and
   "replaying the same transfers from genesis gives the same hashes and roots".
 
+### crates/node (`botchain-node`) — milestone 5, done
+- `[[bin]] botchain-node` + a lib (`botchain_node`) so everything is testable.
+- `cli.rs`: hand written parser, `parse(args) -> Command::{Run(Args), Help}`.
+  Flags `--rpc-port`, `--data-dir`, `--genesis`, `--block-ms` (default 1000,
+  must be > 0), `--help`/`-h`. `CliError::{Missing, MissingValue, Repeated,
+  BadValue, Unknown}`; `main` prints `botchain-node: <error>` plus the usage
+  line to stderr and exits with code 2, runtime failures exit 1.
+- `node.rs`: `Node { chain_id, block_ms, Mutex<Sequencer> }` behind
+  `SharedNode = Arc<Node>`, async read methods (height, block, latest_blocks,
+  balance, account, transaction, checkpoint, pending_len), `submit`, `tick`
+  (uses wall clock ms) and `run_block_clock` (tokio interval, skips the
+  immediate first tick, `MissedTickBehavior::Delay`).
+- `jsonrpc.rs`: codes, `RpcError`, `success`/`failure` builders and `Params`
+  (named object only; missing/null params = empty; `string`, `u64`,
+  `u64_in_range`).
+- `methods.rs`: `dispatch(node, method, params)` implements getHealth,
+  getBlockHeight, getBlock, getLatestBlocks, getBalance, getAccount,
+  getTransaction, sendTransaction, getCheckpoint plus the extra getChainInfo.
+- `rpc.rs`: axum router, POST `/` (GET `/` returns a small hello), single
+  calls and batches, `serve` binds 127.0.0.1:port.
+- `lib.rs::run`: loads + validates genesis, creates the data dir, starts the
+  block clock and the server, stops on ctrl-c.
+- Logs: `node starting ...`, `genesis block 0 hash=...`, `rpc listening ...`,
+  `block <h> hash=... txs=N state_root=...`, `tx accepted/rejected/dropped`.
+- 23 node tests + `tests/http.rs` end to end over a real HTTP socket
+  (blocking client on `spawn_blocking`, tokio's `io-util` is not enabled).
+
 ## Decisions
 - Verification uses `verify_strict` (rejects small order / malleable keys).
 - `Address::from_bytes` does not check the curve point; the check happens in
@@ -114,10 +141,16 @@ not part of the chain: never touch it.
 - `submit` only rejects a nonce *below* the account nonce; a future nonce may
   become valid once earlier transfers land.
 - `Signature` now derives `Ord` so it can key the confirmed tx index.
+- RPC params must be a named object; a positional array is -32602.
+- `getLatestBlocks` refuses a limit outside 1..=100 instead of clamping.
+- Rejected transfers use distinct server codes: -32001 invalid tx, -32002
+  duplicate, -32003 stale nonce, -32004 mempool full (all in -32000..-32099).
+- Every response is HTTP 200; errors live in the JSON-RPC error object.
+- The node holds the sequencer in a `tokio::sync::Mutex` (no poisoning); no
+  lock is held across an await other than the sequencer call itself.
+- `--data-dir` is only created for now; nothing is written to it yet.
 
-## Next (milestone 5)
-The node: a `crates/node` binary `botchain-node` with the CLI flags
-(`--rpc-port`, `--data-dir`, `--genesis`, `--block-ms`), a tokio tick that
-calls `Sequencer::tick`, one log line per event, and the JSON-RPC surface
-over axum. Persistence with redb after (or with) that; `Chain` is in memory
-today and rebuilt from genesis + blocks.
+## Next (milestone 6)
+Persistence with redb: write blocks (and the state or a snapshot) into
+`--data-dir`, reopen on start and replay/restore so a restart keeps the
+chain (acceptance level 4), then the checkpoint work of level 5.
