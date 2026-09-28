@@ -6,7 +6,9 @@
 pub mod amount;
 pub mod crypto;
 pub mod hash;
+pub mod tx;
 
 pub use amount::{Amount, AmountError};
 pub use crypto::{verify, Address, CryptoError, Keypair, Signature};
 pub use hash::{sha256, sha256_parts, Hash, HashError};
+pub use tx::{transfer_message, Transfer, TxError};
