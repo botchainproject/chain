@@ -1,0 +1,21 @@
+# Keeps every allowed dependency fetched and compiled. Not part of the chain.
+[package]
+name = "warm"
+edition.workspace = true
+version.workspace = true
+publish = false
+
+[dependencies]
+anyhow.workspace = true
+thiserror.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+sha2.workspace = true
+ed25519-dalek.workspace = true
+rand.workspace = true
+bs58.workspace = true
+hex.workspace = true
+tokio.workspace = true
+axum.workspace = true
+redb.workspace = true
+tempfile.workspace = true
